@@ -5,7 +5,7 @@
 This Python toolbox is designed to work within Esri ArcGIS Pro software to provide a pleasant user experience when extracting Census data, in particular the 5-year estimates from the American Community Survey (ACS).  The extracted data will either take the form of a stand alone table inside an existing file geodatabase or, if geometries were selected, as a feature class with the selected variables appended to the attribute table.  
 
 # <a name="installation"></a>Installation
-Within ArcGIS Pro, right-click on Toolboxes within the Catalog pane, then ```Add Toolbox```.  Navigate to the location where the toolbox (```.pyt```) has been saved and add it to the project.
+Save the toolbox (```.pyt```) and accompanying metadata files (```.xml```) to a location that can be accessed by ArcGIS Pro.  Within ArcGIS Pro, right-click on Toolboxes within the Catalog pane, then ```Add Toolbox```.  Navigate to the location where the toolbox has been saved and add it to the project.
 
 # <a name="team-members"></a>Team Members
 Randolph Pullen (<rpullen@chattanooga.gov>)
