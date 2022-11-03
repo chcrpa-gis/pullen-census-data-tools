@@ -12,18 +12,19 @@ License: GIS Professional Basic
 ================================================================================
 Summary: This toolbox contains a tool for extracting up to 50 estimates from the
          U.S. Census Bureau American Community Survey (ACS) 5-year estimates.
-         Values are written to a table within an existing file geodatabase.
+         Values are either written to a atand alone table within an existing 
+         file geodatabase or appended to tract geometries, if selected.
 
          The tool scrapes Census web pages to populate tool interfaces for
          state, counties, and variables available to download.  The margins of
          error may be optionally downloaded as well.  A URL is constructed that
          works with the Census API to acquire the desired variables.  That data
-         may either be converted to a stand alone table, or, if the user wishes, it
-         may be combined with a downloaded shapefile of census tract geometries
-         and converted into a feature class within an existing file geodatabase
-         containing all of the desired attributes.
+         may either be converted to a stand alone table, or, if the user wishes,
+         it may be combined with a downloaded shapefile of census tract geome-
+         tries and converted into a feature class within an existing file geo-
+         database containing all of the desired attributes.
 --------------------------------------------------------------------------------
-Caveats: This tool is incompatible with ArcMap.
+Caveats: The tool is incompatible with ArcMap.
 
          In some circumstances, the global variable moe_all is set to None if
          the tool is re-run without being reinitialized, causing the tool to
@@ -33,13 +34,14 @@ Caveats: This tool is incompatible with ArcMap.
 
          The tool does not work from the Python command line.
 
-         The following  warning applies to the tool metadata (.xml) and not this
+         The following warning applies to the tool metadata (.xml) and not this
          actual script.  If the user clicks on the embedded hyperlinks to see
          the variable definitions from the help info box (the box that appears
-         when hovering over the blue "i" mark left of the paramter name in the
-         tool dialogue window), ArcGIS Pro will crash.  Esri has confirmed this behavior
-         as BUG-000151931.  If the hyperlinks are accessed via Catalog View,
-         however, then they work as intended.
+         when hovering over the blue "i" mark left of the parameter name in the
+         tool dialogue window), ArcGIS Pro will crash.  Esri has confirmed this 
+         behavior as BUG-000151931, which is resoloved in ArcGIS Pro 3.1.  If 
+         the hyperlinks are accessed via Catalog View, however, then they work 
+         as intended in any version of ArcGIS Pro.
 --------------------------------------------------------------------------------
   Usage: Pullen Census Data Tools - A Geoprocessing Toolbox for Census Data
          Copyright (C) 2022  Randolph Pullen
@@ -58,7 +60,7 @@ Caveats: This tool is incompatible with ArcMap.
          along with this program.  If not, see <https://www.gnu.org/licenses/>.
 --------------------------------------------------------------------------------
 History: 2022-11-03 Fixed the fatal error of a field alias exceeding 255 charac-
-         ters.  Also made field aliases and optional choice, True by default.
+         ters and made field aliases an optional choice, True by default.
 ================================================================================
 """
 
@@ -217,7 +219,7 @@ class ACS5Yr(object):
         # collection is also made of all MOE for the given year, which is global
         # in scope.  The MOE is identified in the Attributes column by having an
         # "M" suffix versus an "EA" or "MA."  A global dictionary is used to
-        # maintain the field aliases for the variables, include the MOE.
+        # maintain the field aliases for the variables, include the MOE alias.
         if parameters[0].altered and not parameters[0].hasBeenValidated:
             parameters[3].values = None
             url = ('https://api.census.gov/data/{}/acs/acs5/'
