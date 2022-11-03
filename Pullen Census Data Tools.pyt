@@ -56,6 +56,9 @@ Caveats: This tool is incompatible with ArcMap.
 
          You should have received a copy of the GNU General Public License
          along with this program.  If not, see <https://www.gnu.org/licenses/>.
+--------------------------------------------------------------------------------
+History: 2022-11-03 Fixed the fatal error of a field alias exceeding 255 charac-
+         ters.  Also made field aliases and optional choice, True by default.
 ================================================================================
 """
 
@@ -92,6 +95,7 @@ class ACS5Yr(object):
         # specific variables selected by the user.
         global moe_all
         global moe_avail
+        global alias
 
         # The year of interest.  The range must be updated whenever new data be-
         # comes available.
@@ -148,9 +152,18 @@ class ACS5Yr(object):
         param3.columns = [['GPString', 'Name']]
         param3.filters[0].type = 'ValueList'
 
+        # Boolean to indicate if descriptive field alias should be used.
+        param4 = arcpy.Parameter(
+            displayName='Use descriptive field aliases.',
+            name='use_alias',
+            datatype='GPBoolean',
+            parameterType='Optional',
+            direction='Input')
+        param4.value = True
+
         # Boolean to indicate whether variables for which all records are null
         # should be excluded from the final output.
-        param4 = arcpy.Parameter(
+        param5 = arcpy.Parameter(
             displayName='Drop variables where all records are null.',
             name='null_records',
             datatype='GPBoolean',
@@ -159,7 +172,7 @@ class ACS5Yr(object):
 
         # Boolean to indicate whether the margin of errors should be downloaded
         # alongside the variables of interest.
-        param5 = arcpy.Parameter(
+        param6 = arcpy.Parameter(
             displayName='Include margins of error (if available).',
             name='margin_of_error',
             datatype='GPBoolean',
@@ -168,7 +181,7 @@ class ACS5Yr(object):
 
         # Boolean to indicate whether the tract geometries should be downloaded
         # alongside the variables of interest.
-        param6 = arcpy.Parameter(
+        param7 = arcpy.Parameter(
             displayName='Include tract geometries.',
             name='geometries',
             datatype='GPBoolean',
@@ -177,7 +190,7 @@ class ACS5Yr(object):
 
         # The output name.  A file geodatabase must already exist in which
         # to create either the table or the feature class. 
-        param7 = arcpy.Parameter(
+        param8 = arcpy.Parameter(
             displayName='Output (must be within a file geodatabase)',
             name='output',
             datatype=['DETable', 'DEFeatureClass'],
@@ -185,7 +198,7 @@ class ACS5Yr(object):
             direction='Output')
         
         params = [param0, param1, param2, param3, param4, param5, param6,
-                  param7]
+                  param7, param8]
         return params
 
     def isLicensed(self):
@@ -203,7 +216,8 @@ class ACS5Yr(object):
         # of "int."  The loop start value was determined by trial and error.  A
         # collection is also made of all MOE for the given year, which is global
         # in scope.  The MOE is identified in the Attributes column by having an
-        # "M" suffix versus an "EA" or "MA."
+        # "M" suffix versus an "EA" or "MA."  A global dictionary is used to
+        # maintain the field aliases for the variables, include the MOE.
         if parameters[0].altered and not parameters[0].hasBeenValidated:
             parameters[3].values = None
             url = ('https://api.census.gov/data/{}/acs/acs5/'
@@ -215,14 +229,35 @@ class ACS5Yr(object):
             desc = []
             global moe_all
             moe_all = set()
+            global alias
+            alias = {}
             for j in range(2, len(tr_elements)):
                 T = tr_elements[j]
                 if len(T) != 8 or T[6].text_content() != 'int':
                     continue
-                ID = T[0].text_content()
-                tbl = T[2].text_content()
-                var = ' '.join(T[1].text_content().split('!!')[2:])
-                variables.append('[{}] {} {}'.format(ID, tbl, var))
+                name = T[0].text_content()
+                label = ' '.join(T[1].text_content().split('!!')[2:])
+                concept = T[2].text_content()
+                tmp = '{} {}'.format(concept, label)
+                if len(tmp) <= 255:
+                    alt = tmp
+                    if len('MOE {}'.format(alt)) <= 255:
+                        alt_moe = 'MOE {}'.format(alt)
+                    elif len('MOE {}'.format(label)) <= 255:
+                        alt_moe = 'MOE {}'.format(label)
+                    else:
+                        alt_moe = 'MOE {}'.format(name)
+                elif len(label) <= 255:
+                    alt = label
+                    if len('MOE {}'.format(label)) <= 255:
+                        alt_moe = 'MOE {}'.format(label)
+                    else:
+                        alt_moe = 'MOE {}'.format(name)
+                else:
+                    alt = name
+                    alt_moe = 'MOE {}'.format(name)
+                alias[name] = [alt, alt_moe]
+                variables.append('[{}] {} {}'.format(name, concept, label))
                 flds = [i.strip() for i in T[4].text_content().split(',\n')]
                 moe_all.update(i for i in flds if i.endswith('M'))
             parameters[3].filters[0].list = variables
@@ -285,7 +320,7 @@ class ACS5Yr(object):
                 parameters[3].setErrorMessage(msg)
             # Requests for the margins of error cannot bring the total number of
             # variables above 50.
-            if parameters[5].value:
+            if parameters[6].value:
                 # MOE have the same name as estimate variables except they end
                 # in 'M'.  Convert the variable names into potential MOE names.
                 moe_conv = set(i[:-1] + 'M' for i in variables)
@@ -308,6 +343,7 @@ class ACS5Yr(object):
 
     def execute(self, parameters, messages):
         """The source code of the tool."""
+        global alias
 
         year = parameters[0].value
         arcpy.AddMessage('Year: {}'.format(year))
@@ -322,21 +358,9 @@ class ACS5Yr(object):
         # Obtain a list of the variables selected by the user.  Add to the
         # variable list the available margins of error if optionally selected.
         variables = [i[0][1:i[0].find(']')] for i in parameters[3].values]
-        if parameters[5].value:
+        if parameters[6].value:
             global moe_avail
             variables = sorted(set(variables).union(moe_avail))
-
-        # Create a dictionary of the variable and its description.
-        alias = {}
-        for i in parameters[3].values:
-            idx = i[0].find(']')
-            ID = i[0][1:idx]
-            desc = i[0][idx + 2:]
-            alias[ID] = desc
-        msg = 'Variable\tDescription'
-        for k in sorted(alias.keys()):
-            msg += '\n{}\t{}'.format(k, alias[k])
-        arcpy.AddMessage(msg)
         
         # Once all variables have been identified, construct a URL that will
         # fetch the raw data from the Census Bureau.
@@ -394,7 +418,7 @@ class ACS5Yr(object):
         for col in df.columns[4:]:
             minimum = min(df[col].astype(float))
             maximum = max(df[col].astype(float))
-            if parameters[4].value:
+            if parameters[5].value:
                 if minimum == -9999 and maximum == -9999:
                     remove_cols += [col]
                     continue
@@ -442,15 +466,15 @@ class ACS5Yr(object):
 
         # Convert the NumPy array into a table.  If the geometries are request-
         # ed, use a scratch name for the table.
-        ws = parameters[7].valueAsText
+        ws = parameters[8].valueAsText
         ws = ws[:ws.rfind('.gdb') + 4]
         orig_ws = arcpy.env.workspace
         arcpy.env.workspace = ws
-        if parameters[6].value:
+        if parameters[7].value:
             prefix =  'xxxCensusAPITable_'
             tbl = arcpy.CreateScratchName(prefix, '', 'ArcInfoTable', ws)
         else:
-            tbl = parameters[7].valueAsText
+            tbl = parameters[8].valueAsText
             
         # In theory, this shouldn't be needed, but even using CreateScratchName,
         # ArcPy will create a non-unique table name, so it's best to delete any
@@ -463,24 +487,39 @@ class ACS5Yr(object):
         arcpy.management.AddIndex(tbl, 'GEOID', 'idx_GEOID')
 
         # If the geometries are not required, terminate the script.
-        if not parameters[6].value:
+        if not parameters[7].value:
             arcpy.env.workspace = orig_ws
-            # Alter the field aliases. 
-            flds = [fld.name for fld in arcpy.Describe(tbl).Fields]
-            for fld in flds:
-                if fld in alias:
-                    arcpy.management.AlterField(tbl, fld, '', alias[fld])
-                    # Update the margin of error alias, if present.
-                    moe_fld = fld[:-1] + 'M'
-                    if moe_fld in flds:
-                        moe_alias = 'MOE ' + alias[fld]
-                        arcpy.management.AlterField(tbl, moe_fld, '',
-                                                    moe_alias)
+            # Alter the field aliases if selected.
+            if parameters[4].value:
+                flds = [fld.name for fld in arcpy.Describe(tbl).Fields]
+                for fld in flds:
+                    if fld in alias:
+                        arcpy.management.AlterField(tbl, fld, '', alias[fld][0])
+                        # Update the margin of error alias, if present.
+                        fld_moe = fld[:-1] + 'M'
+                        if fld_moe in flds:
+                            arcpy.management.AlterField(tbl, fld_moe, '',
+                                                    alias[fld][1])            
+            arcpy.AddMessage('Table: {}'.format(tbl))
             return
 
-        # Create the url to download the shapefile zip archive.
-        url = ('https://www2.census.gov/geo/tiger/GENZ{}/shp/'
-               'cb_{}_{}_tract_500k.zip'.format(year, year, state_fips))
+        # Create the url to download the shapefile zip archive.  The url varies
+        # based upon the year of interest.  Although the tool currently only
+        # works from 2014 onwards, it is hoped that the tool will be modifed in
+        # the future to work beginning from 2009.
+        if int(year) >= 2014:
+            url = ('https://www2.census.gov/geo/tiger/GENZ{}/shp/'
+                   'cb_{}_{}_tract_500k.zip'.format(year, year, state_fips))
+        elif 2011 <= int(year) <= 2013:
+            url = ('https://www2.census.gov/geo/tiger/TIGER{}/TRACT/'
+                   'tl_{}_{}_tract.zip'.format(year, year, state_fips))
+        elif int(year) == 2010:
+            url = ('https://www2.census.gov/geo/tiger/TIGER2010/TRACT/2010/'
+                   'tl_2010_{}_tract10.zip'.format(state_fips))
+        elif int(year) == 2009:
+            url = ('https://www2.census.gov/geo/tiger/TIGER2009/'
+                   '{}_{}/tl_2009_{}_tract00.zip'.format(state_fips, state_name,
+                                                         state_fips))
         arcpy.AddMessage('Geometry URL: {}'.format(url))
 
         # Isolate just the name of the zip archive, which will be the shapefile
@@ -553,7 +592,7 @@ class ACS5Yr(object):
 
         # After the fields have been removed, use the Feature Class to Feature
         # Class geoprocessing tool again to correct the ObjectID error.
-        output = parameters[7].valueAsText
+        output = parameters[8].valueAsText
         arcpy.AddMessage('Output: {}'.format(output))
         path = os.path.dirname(output)
         name = os.path.basename(output)
@@ -562,16 +601,17 @@ class ACS5Yr(object):
         # Delete the temporary feature class.
         arcpy.management.Delete(xxxfc)
 
-        # Alter the field aliases. 
-        flds = [fld.name for fld in arcpy.Describe(output).Fields]
-        for fld in flds:
-            if fld in alias:
-                arcpy.management.AlterField(output, fld, '', alias[fld])
-                # Update the margin of error alias, if present.
-                moe_fld = fld[:-1] + 'M'
-                if moe_fld in flds:
-                    moe_alias = 'MOE ' + alias[fld]
-                    arcpy.management.AlterField(output, moe_fld, '', moe_alias)
+        # Alter the field aliases.
+        if parameters[4].value:
+            flds = [fld.name for fld in arcpy.Describe(output).Fields]
+            for fld in flds:
+                if fld in alias:
+                    arcpy.management.AlterField(output, fld, '', alias[fld][0])
+                    # Update the margin of error alias, if present.
+                    fld_moe = fld[:-1] + 'M'
+                    if fld_moe in flds:
+                        arcpy.management.AlterField(output, fld_moe, '',
+                                                    alias[fld][1])
                 
         # Index the GEOID attribute in the output feature class.
         arcpy.management.AddIndex(output, 'GEOID', 'idx_GEOID')
