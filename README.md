@@ -12,7 +12,7 @@ Save the toolbox (```.pyt```) and accompanying metadata files (```.xml```) to a 
 # <a name="team-members"></a>Team Members
 Randolph Pullen (<rpullen@chattanooga.gov>)
 
-Planning Analyst, II Research & Analysis
+Planning Analyst II, Research & Analysis
 
 <a href="http://chcrpa.org">Chattanooga-Hamilton County Regional Planning Agency</a>
 
