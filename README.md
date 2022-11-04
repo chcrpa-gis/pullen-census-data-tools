@@ -9,6 +9,12 @@ This Python toolbox is designed to work within Esri ArcGIS Pro software to provi
 Save the toolbox (```.pyt```) and accompanying metadata files (```.xml```) to a location that can be accessed by ArcGIS Pro.  Within ArcGIS Pro, right-click on Toolboxes within the Catalog pane, then ```Add Toolbox```.  Navigate to the location where the toolbox has been saved and add it to the project.
 
 
+# <a name="known-issues"></a>Known Issues
+- The tool is incompatible with ArcMap.
+- The tool must be initialized each time it is run.  
+- The tool cannot be executed from the Python command line.
+
+
 # <a name="team-members"></a>Team Members
 Randolph Pullen (<rpullen@chattanooga.gov>)
 
