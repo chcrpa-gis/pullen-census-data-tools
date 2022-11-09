@@ -23,16 +23,16 @@ Summary: This toolbox contains a tool for extracting up to 50 estimates from the
          it may be combined with a downloaded shapefile of census tract geome-
          tries and converted into a feature class within an existing file geo-
          database containing all of the desired attributes.
+
+         The tool can work from the Python command line if the appropriate steps
+         are taken.  Import the toolbox using the following command:
+
+         > arcpy.ImportToolbox(<path to .pyt>)
+
+         Run the tool with the following:
+         > arcpy.toolname_toolboxalias(params)
 --------------------------------------------------------------------------------
 Caveats: The tool is incompatible with ArcMap.
-
-         In some circumstances, the global variable moe_all is set to None if
-         the tool is re-run without being reinitialized, causing the tool to
-         fail during execution.
-
-         The tool will fail if called from the geoprocessing history.
-
-         The tool does not work from the Python command line.
 
          The following warning applies to the tool metadata (.xml) and not this
          actual script.  If the user clicks on the embedded hyperlinks to see
@@ -59,7 +59,19 @@ Caveats: The tool is incompatible with ArcMap.
          You should have received a copy of the GNU General Public License
          along with this program.  If not, see <https://www.gnu.org/licenses/>.
 --------------------------------------------------------------------------------
-History: 2022-11-03 Fixed the fatal error of a field alias exceeding 255 charac-
+History: 2022-11-08 Fixed the inability of the tool to be called successfully
+         from the Geoprocessing History by removing the lines setting the county
+         & variable parameters to None in the updateParameters method.  Added
+         new checks in the updateMessages method to control potential errors
+         that might arise from not resetting the parameters.
+
+         Added additional checks to the updateMessages method that ensures the
+         output is being directed to a file geodatabase & that the geodatabase
+         &/or feature dataset actually exists.
+
+         Reworked the messages to be more informative.
+
+         2022-11-03 Fixed the fatal error of a field alias exceeding 255 charac-
          ters and made field aliases an optional choice, True by default.
 ================================================================================
 """
@@ -95,9 +107,11 @@ class ACS5Yr(object):
         # Global declaration of the set variables used to keep track of all mar-
         # gins of error (MOEs) for a given year & the MOEs available for the
         # specific variables selected by the user.
-        global moe_all
-        global moe_avail
+        global all_var
+        global all_moe
+        global avail_moe
         global alias
+        global counties
 
         # The year of interest.  The range must be updated whenever new data be-
         # comes available.
@@ -191,7 +205,7 @@ class ACS5Yr(object):
             direction='Input')
 
         # The output name.  A file geodatabase must already exist in which
-        # to create either the table or the feature class. 
+        # to create either the table or the feature class.
         param8 = arcpy.Parameter(
             displayName='Output (must be within a file geodatabase)',
             name='output',
@@ -212,6 +226,11 @@ class ACS5Yr(object):
         validation is performed.  This method is called whenever a parameter
         has been changed."""
 
+        global all_var
+        global all_moe
+        global alias
+        global counties
+
         # Dynamically populates the tool drop down of Census estimates from the
         # official page of estimate definitions.  Actual variable elements on
         # the page are identified by having a length of 8 and a Predicate Type
@@ -221,17 +240,14 @@ class ACS5Yr(object):
         # "M" suffix versus an "EA" or "MA."  A global dictionary is used to
         # maintain the field aliases for the variables, include the MOE alias.
         if parameters[0].altered and not parameters[0].hasBeenValidated:
-            parameters[3].values = None
             url = ('https://api.census.gov/data/{}/acs/acs5/'
                    'variables.html'.format(parameters[0].value))
             page = requests.get(url)
             doc = lxml.html.fromstring(page.content)
             tr_elements = doc.xpath('//tr')
             variables = []
-            desc = []
-            global moe_all
-            moe_all = set()
-            global alias
+            all_var = set()
+            all_moe = set()
             alias = {}
             for j in range(2, len(tr_elements)):
                 T = tr_elements[j]
@@ -239,7 +255,8 @@ class ACS5Yr(object):
                     continue
                 name = T[0].text_content()
                 label = ' '.join(T[1].text_content().split('!!')[2:])
-                concept = T[2].text_content()
+                label = label.replace(':', '')
+                concept = T[2].text_content().replace(':', '')
                 tmp = '{} {}'.format(concept, label)
                 if len(tmp) <= 255:
                     alt = tmp
@@ -260,9 +277,11 @@ class ACS5Yr(object):
                     alt_moe = 'MOE {}'.format(name)
                 alias[name] = [alt, alt_moe]
                 variables.append('[{}] {} {}'.format(name, concept, label))
+                all_var.update([name])
                 flds = [i.strip() for i in T[4].text_content().split(',\n')]
-                moe_all.update(i for i in flds if i.endswith('M'))
+                all_moe.update(i for i in flds if i.endswith('M'))
             parameters[3].filters[0].list = variables
+
 
         # Dynamically populate the tool drop down of state counties based upon
         # the user's selection of state.  The data source, from the Census web
@@ -271,7 +290,6 @@ class ACS5Yr(object):
         # applicable, is removed to clean up the drop down.  Counties are pre-
         # sented as "[FIPS] Name," e.g., "[065] Hamilton."
         if parameters[1].altered and not parameters[1].hasBeenValidated:
-            parameters[2].values = None
             fips = parameters[1].value[1:3]
             abbv = parameters[1].value[-3:-1].lower()
             url = ('https://www2.census.gov/geo/docs/reference/codes/files/'
@@ -284,11 +302,26 @@ class ACS5Yr(object):
             cnty = ['[{}] {}'.format(i[0], i[1][:i[1].rfind(s) - 1]
                                      if i[1].rfind(s) > 0 else i[1]) for i in t]
             parameters[2].filters[0].list = ['[*] All Counties'] + cnty
+            counties = set(['[*] All Counties'] + cnty)
         return
 
     def updateMessages(self, parameters):
         """Modify the messages created by internal validation for each tool
         parameter.  This method is called after internal validation."""
+
+        global counties
+        
+        # Raise an error if the selected counties don't match the county list
+        # created from the state selection.
+        if parameters[2].values:
+            cnty = [i[0] for i in parameters[2].values]
+            errors = set(cnty).difference(counties)
+            if errors:
+                msg = ('The selection contains counties not found within '
+                       '{}:'.format(parameters[1].value.split()[1]))
+                for item in errors:
+                    msg += '\n{}'.format(item)
+                parameters[2].setErrorMessage(msg)
 
         # Raise an error if there are duplicates in the county selection.
         if parameters[2].values and len(parameters[2].values) > 1:
@@ -304,8 +337,25 @@ class ACS5Yr(object):
                 
         # Check that the variable selection is valid.
         if parameters[3].values and len(parameters[3].values) > 1:
+
+            # Create a list of only the selected variable names.
             variables = [i[0][1:i[0].find(']')] for i in parameters[3].values]
             num_var = len(variables)
+            
+            # Create a set of the name component of the selected variables.
+            sel_var = set(i[0][1:i[0].index(']')] for i in parameters[3].values)
+
+            # Check if there is a difference between the names of the selected
+            # variables & those that were determined using the year value.
+            errors = sel_var.difference(all_var)
+            if errors:
+                desc = {i[0][1:i[0].index(']')]: i[0] for i in parameters[3].values}
+                msg = ('The selection contains variables not available for '
+                       '{}:'.format(parameters[0].value))
+                for name in errors:
+                    msg += '\n{}'.format(desc[name])
+                parameters[3].setErrorMessage(msg)
+            
             # Duplicates produce a data retrieval failure with Census servers.
             if num_var > len(set(variables)):
                 msg = ('The selection should not contain duplicates.  The '
@@ -313,63 +363,115 @@ class ACS5Yr(object):
                 counts = dict(Counter(variables))
                 dups = {k: v for k, v in counts.items() if v > 1}
                 for k in sorted(dups):
-                    msg += '\n{}'.format(k)
+                    msg += '\n[{}] {}'.format(k, alias[k][0])
                 parameters[3].setErrorMessage(msg)
+
             # The get command of the URL supports a maximum of 50 variables.
             if num_var > 50:
-                msg = ('There are {:,d} variables selected.  The Census web '
-                       'site only allows for 50 variables.'.format(num_var))
+                msg = ('There are {:,d} variables selected.  The Census API '
+                       'only allows for 50 variables.'.format(num_var))
                 parameters[3].setErrorMessage(msg)
-            # Requests for the margins of error cannot bring the total number of
-            # variables above 50.
-            if parameters[6].value:
-                # MOE have the same name as estimate variables except they end
-                # in 'M'.  Convert the variable names into potential MOE names.
-                moe_conv = set(i[:-1] + 'M' for i in variables)
-                # Intersect a set of converted MOE names with the set of all
-                # published MOE variable names to determine which MOE are avail-
-                # able.  Not all estimate variables have MOE uniformly across
-                # years, so membership must always be checked.
-                global moe_all
-                global moe_avail
-                moe_avail = moe_all.intersection(moe_conv)
-                num_moe = len(moe_avail)
-                total = num_var + num_moe
-                if total > 50:
-                    msg = ('There are {:,d} variables selected ({:,d} '
-                           'estimates + {:,d} margins of error), exceeding the '
-                           '50 variable limit imposed by the Census '
-                           'Bureau.'.format(total, num_var, num_moe))
-                    parameters[3].setErrorMessage(msg)            
+
+        # Requests for the margins of error cannot bring the total number of
+        # variables above 50.  If no variables have been selected, then there's
+        # no reason to perform the check.
+        if parameters[6].value and parameters[3].values:
+
+            # Create a list of only the selected variable names.
+            variables = [i[0][1:i[0].find(']')] for i in parameters[3].values]
+            num_var = len(variables)
+            
+            # MOE have the same name as estimate variables except they end
+            # in 'M'.  Convert the variable names into potential MOE names.
+            potential_moe = set(i[:-1] + 'M' for i in variables)
+            
+            # Intersect a set of potential MOE names with the set of all
+            # published MOE variable names to determine which MOE are avail-
+            # able.  Not all estimate variables have MOE uniformly across
+            # all years, so membership must always be checked.
+            global all_moe
+            global avail_moe
+            avail_moe = all_moe.intersection(potential_moe)
+            num_moe = len(avail_moe)
+            total = num_var + num_moe
+            if total > 50:
+                msg = ('There are {:,d} variables selected ({:,d} '
+                       'estimates + {:,d} margins of error), exceeding the '
+                       '50 variable limit imposed by the Census '
+                       'API.'.format(total, num_var, num_moe))
+                parameters[3].setErrorMessage(msg)            
+
+        # Ensure that the output is going to a file geodatabase & that the file
+        # geodatabase &, optionally, feature dataset both exists.
+        if parameters[8].value:
+            msg = ''
+            path = arcpy.Describe(parameters[8].value).path
+            if path.rfind('.gdb') == -1:
+                msg = 'Output must be to a file geodatabase.'
+            else:
+                gdb = path[:path.index('.gdb') + 4]
+                if not arcpy.Exists(gdb):
+                    msg = 'Output file geodatabase not found.'
+                elif not arcpy.Exists(path):
+                    msg = 'Output feature dataset not found.'
+            if msg:
+                parameters[8].setErrorMessage(msg)
+        # Validate the output name.
+        if parameters[8].value:
+            msg = ''           
         return
 
     def execute(self, parameters, messages):
         """The source code of the tool."""
+        
         global alias
+        global avail_moe
 
         year = parameters[0].value
         arcpy.AddMessage('Year: {}'.format(year))
-        val = parameters[1].value
-        state_fips = val[1:3]
-        state_name = ' '.join(val.split()[1:-1])        
-        arcpy.AddMessage('State: {} ({})'.format(state_fips, state_name))
+        
+        v = parameters[1].value
+        state_fips = v[1:3]
+        state_name = ' '.join(v.split()[1:-1])        
+        arcpy.AddMessage('State: {} {}'.format(state_fips, state_name))
+        
         counties = [i[0].split()[0][1:-1] for i in parameters[2].values]
-        counties = ['*'] if '*' in counties else counties
-        arcpy.AddMessage('Counties: {}'.format(', '.join(counties)))
+        if '*' in counties:
+            counties = ['*']
+            msg = 'Counties: *'
+        else:
+            desc_counties = [i[0] for i in parameters[2].values]
+            desc_counties.sort()
+            desc_counties = [i[1:i.index(']')] + ' ' + i[i.index(']') + 2:] for
+                             i in desc_counties]
+            msg = 'Counties: {}'.format(desc_counties[0])
+            for county in desc_counties[1:]:
+                msg += '\n{:>10}{}'.format(' ', county)
+        arcpy.AddMessage(msg)
 
-        # Obtain a list of the variables selected by the user.  Add to the
-        # variable list the available margins of error if optionally selected.
+        # Obtain a list of the variable names, not descriptive names, selected
+        # by the user.  Add to the list the available margins of error if op-
+        # tionally selected.
         variables = [i[0][1:i[0].find(']')] for i in parameters[3].values]
         if parameters[6].value:
-            global moe_avail
-            variables = sorted(set(variables).union(moe_avail))
+            variables = sorted(set(variables).union(avail_moe))
         
         # Once all variables have been identified, construct a URL that will
         # fetch the raw data from the Census Bureau.
         url = ('https://api.census.gov/data/{}/acs/acs5?get={}&for=tract:*'
        '&in=state:{}&in=county:{}'.format(year, ','.join(variables),
                                           state_fips, ','.join(counties)))
-        arcpy.AddMessage('Data URL: {}'.format(url))        
+        arcpy.AddMessage('Data URL: {}'.format(url))
+
+        # Print the variables and their descriptive names.
+        msg = 'Variable\tDescription'
+        for var in variables:
+            if var.endswith('E'):
+                msg += '\n{}\t{}'.format(var, alias[var][0])
+            elif var.endswith('M'):
+                k = var[:-1] + 'E'
+                msg += '\n{}\t{}'.format(var, alias[k][1])
+        arcpy.AddMessage(msg)
 
         # Load the raw Census data into a Pandas dataframe.
         df = pandas.read_json(url)
@@ -572,38 +674,45 @@ class ACS5Yr(object):
         # integer field.  So far, the best work around is to run the Feature
         # Class to Feature Class tool a second time after removing the unwanted
         # fields to get everything set correctly.
-        xxxfc = arcpy.CreateScratchName('xxxCensusAPIFeatureClass_', '',
-                                        'FeatureClass')
-        if arcpy.Exists(xxxfc):
-            arcpy.management.Delete(xxxfc)
+        xxxfc01 = arcpy.CreateScratchName('xxxCensusAPIFeatureClass01_', '',
+                                         'FeatureClass')
+        xxxfc02 = arcpy.CreateScratchName('xxxCensusAPIFeatureClass02_', '',
+                                          'FeatureClass')
+        for fc in [xxxfc01, xxxfc02]:
+            if arcpy.Exists(fc):
+                arcpy.management.Delete(fc)
 
-        # Convert the joined feature class to a temporary feature class    
-        arcpy.conversion.FeatureClassToFeatureClass(shp_join,
-                                                    os.path.dirname(xxxfc),
-                                                    os.path.basename(xxxfc))
+        # Convert the joined feature class to a temporary feature class
+        path = os.path.dirname(xxxfc01)
+        name = os.path.basename(xxxfc01)
+        arcpy.conversion.FeatureClassToFeatureClass(shp_join, path, name)
         
         # Determine the fields to be deleted and delete those fields.
-        flds = arcpy.Describe(xxxfc).Fields
+        flds = arcpy.Describe(xxxfc01).Fields
         remove_flds = [f.name for f in flds if (f.type != 'OID' and
                                                 not f.required and
                                                 f.name.endswith('_1'))]
         remove_flds += [f.name for f in flds if (f.type != 'OID' and
                                                  not f.required and
                                                  f.name == 'OBJECTID')]
-        arcpy.management.DeleteField(xxxfc, remove_flds, 'DELETE_FIELDS')
+        arcpy.management.DeleteField(xxxfc01, remove_flds, 'DELETE_FIELDS')
 
         # After the fields have been removed, use the Feature Class to Feature
         # Class geoprocessing tool again to correct the ObjectID error.
+        path = os.path.dirname(xxxfc02)
+        name = os.path.basename(xxxfc02)
+        arcpy.conversion.FeatureClassToFeatureClass(xxxfc01, path, name)
+
+        # Once the fields have been taken care of, create the final feature
+        # class by sorting the features based upon GEOID.
         output = parameters[8].valueAsText
-        arcpy.AddMessage('Output: {}'.format(output))
-        path = os.path.dirname(output)
-        name = os.path.basename(output)
-        arcpy.conversion.FeatureClassToFeatureClass(xxxfc, path, name)
+        arcpy.management.Sort(xxxfc02, output, 'GEOID')
 
-        # Delete the temporary feature class.
-        arcpy.management.Delete(xxxfc)
+        # The Sort tool introduces a new field to the feature class, ORIG_FID.
+        # Delete it.
+        arcpy.management.DeleteField(output, 'ORIG_FID', 'DELETE_FIELDS')
 
-        # Alter the field aliases.
+        # Alter the field aliases if selected.
         if parameters[4].value:
             flds = [fld.name for fld in arcpy.Describe(output).Fields]
             for fld in flds:
@@ -632,11 +741,12 @@ class ACS5Yr(object):
         msg += '\nDeleted scratch table: {}'.format(result)
         arcpy.AddMessage(msg)
 
-        # Delete the scratch feature class.
-        msg = 'Scratch feature class: {}'.format(xxxfc)
-        result = arcpy.management.Delete(os.path.normpath(xxxfc))
-        msg += '\nDeleted scratch feature class: {}'.format(result)
-        arcpy.AddMessage(msg)
+        # Delete the scratch feature classes.
+        for fc in [xxxfc01, xxxfc02]:
+            msg = 'Scratch feature class: {}'.format(fc)
+            result = arcpy.management.Delete(os.path.normpath(fc))
+            msg += '\nDeleted scratch feature class: {}'.format(result)
+            arcpy.AddMessage(msg)
 
         # Delete the scratch workspace containing the zip archive and shapefile.
         msg = 'Scratch folder: {}'.format(scratch)
