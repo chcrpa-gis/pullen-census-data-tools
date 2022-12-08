@@ -59,7 +59,11 @@ Caveats: The tool is incompatible with ArcMap.
          You should have received a copy of the GNU General Public License
          along with this program.  If not, see <https://www.gnu.org/licenses/>.
 --------------------------------------------------------------------------------
-History: 2022-11-08 Fixed the inability of the tool to be called successfully
+History: 2022-12-08 Added 2021 to the list of available years to select in the
+         year parameter drop down as the Census has released data for this 
+         year.
+
+         2022-11-08 Fixed the inability of the tool to be called successfully
          from the Geoprocessing History by removing the lines setting the county
          & variable parameters to None in the updateParameters method.  Added
          new checks in the updateMessages method to control potential errors
@@ -122,7 +126,7 @@ class ACS5Yr(object):
             parameterType='Required',
             direction='Input')
         param0.filter.type = 'ValueList'
-        param0.filter.list = [i for i in range(2020, 2013, -1)]
+        param0.filter.list = [i for i in range(2021, 2013, -1)]
 
         # The state of interest.  In the user dialogue, the selections are pre-
         # sented as "[FIPS] Name (Postal Abbv.)," e.g., "[47] Tennessee (TN)."
