@@ -11,7 +11,6 @@ Save the toolbox (```.pyt```) and accompanying metadata files (```.xml```) to a 
 
 # <a name="known-issues"></a>Known Issues
 - The tool is incompatible with ArcMap.
-- The tool cannot be executed from the Python command line.
 
 
 # <a name="team-members"></a>Team Members
