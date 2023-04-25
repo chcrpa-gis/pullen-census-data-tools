@@ -11,7 +11,6 @@ Save the toolbox (```.pyt```) and accompanying metadata files (```.xml```) to a 
 
 # <a name="known-issues"></a>Known Issues
 - The tool is incompatible with ArcMap.
-- The tool cannot be executed from the Python command line.
 
 
 # <a name="team-members"></a>Team Members
@@ -28,5 +27,6 @@ Planning Analyst II, Research & Analysis
 
 
 # <a name="history"></a>History
+- **2022-12-08** As the Census Bureau has now released 2021 data, that year is now an option in the year parameter drop down.
 - **2022-11-09** Fixed issues with the tool behavior such that it will now work without being re-initialized or if called from the Geoprocessing History.  Modified the updateParamters method to address the issue of not all estimates being available across all years and to ensure that outputs are directed to an existing file geodatabase.  Modified the runtime messages to be more informative.  
 - **2022-11-03** Fixed the fatal error resulting from a field alias exceeding 255 characters.  Added the option to use or not use descriptive field aliases.
