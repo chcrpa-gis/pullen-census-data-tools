@@ -9,6 +9,11 @@ This Python toolbox is designed to work within Esri ArcGIS Pro software to provi
 Save the toolbox (```.pyt```) and accompanying metadata files (```.xml```) to a location that can be accessed by ArcGIS Pro.  Within ArcGIS Pro, right-click on Toolboxes within the Catalog pane, then ```Add Toolbox```.  Navigate to the location where the toolbox has been saved and add it to the project.
 
 
+# <a name="resources"></a>Resources
+The following U.S. Census Bureau publication is an indispensible reference for American Community Survey data.  Chapter 8, <i>Calculating Measures of Error for Derived Estimates</i>, provides guidance on how to work with margins of error.
+
+<a href="https://www.census.gov/programs-surveys/acs/library/handbooks/general.html">Understanding and Using American Community Survey Data: What All Data Users Need to Know</a>
+
 # <a name="known-issues"></a>Known Issues
 - The tool is incompatible with ArcMap.
 
@@ -27,6 +32,7 @@ Planning Analyst II, Research & Analysis
 
 
 # <a name="history"></a>History
+- **2023-04-24** Added the ability to select between tracts and block groups.  Working to limit the variables presented in the drop down to only those available for the selected geography.  Currently only supporting B tables.  Addressed code negatively impacted by ArcGIS Pro 3.1 tool deprecations.
 - **2022-12-08** As the Census Bureau has now released 2021 data, that year is now an option in the year parameter drop down.
 - **2022-11-09** Fixed issues with the tool behavior such that it will now work without being re-initialized or if called from the Geoprocessing History.  Modified the updateParamters method to address the issue of not all estimates being available across all years and to ensure that outputs are directed to an existing file geodatabase.  Modified the runtime messages to be more informative.  
 - **2022-11-03** Fixed the fatal error resulting from a field alias exceeding 255 characters.  Added the option to use or not use descriptive field aliases.
