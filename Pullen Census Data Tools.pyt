@@ -45,7 +45,10 @@ Caveats: The toolbox is incompatible with ArcMap.
          You should have received a copy of the GNU General Public License
          along with this program.  If not, see <https://www.gnu.org/licenses/>.
 --------------------------------------------------------------------------------
-History: 2023-04-24 Added the ability to download Block Group data.  Due to the
+History: 2023-06-13 Updated the code that populates to drop down menus for
+         states and counties to accommodate changes made on the Census' website.
+
+         2023-04-24 Added the ability to download Block Group data.  Due to the
          deprecation of some tools in ArcGIS Pro 3.1, some sections were re-
          done to be compatible with future releases of the software.  Attempted
          to restrict the drop down list of variables to only those availble for
@@ -110,6 +113,8 @@ class ACS5Yr(object):
 
     def getParameterInfo(self):
         """Define parameter definitions"""
+        global state_df
+        
         # The year of interest.  The range must be updated whenever new data be-
         # comes available.
         param0 = arcpy.Parameter(
@@ -123,24 +128,27 @@ class ACS5Yr(object):
 
         # The state of interest.  In the user dialogue, the selections are pre-
         # sented as "[FIPS] Name (Postal Abbv.)," e.g., "[47] Tennessee (TN)."
-        # States and FIPS are pulled dynamically from a Census website.  The
-        # element index ranges were determined by trial & error.
+        # States and FIPS are pulled dynamically from a Census website.
         param1 = arcpy.Parameter(
             displayName='State',
             name='state',
             datatype='GPString',
             parameterType='Required',
             direction='Input')
-        url = 'https://www.census.gov/library/reference/code-lists/ansi.html'
-        page = requests.get(url)
-        doc = lxml.html.fromstring(page.content)
-        tr_elements = doc.xpath('//tr')
-        states = []
-        for n in range(40, 91):
-            states.append(tr_elements[n].text_content().split('\n')[:-1])
-        states = [['[{}] {} ({})'.format(i[1], i[0], i[2])] for i in states]
+        state_name = self.stateNames()
+        url = ('https://www2.census.gov/geo/docs/reference/codes2020/'
+               'national_county2020.txt')
+        state_df = pandas.read_csv(url, sep='|')
+        cols = ['STATEFP', 'STATE']
+        d = state_df[cols].groupby(cols).count().reset_index()
+        d = d[d['STATE'].isin(state_name)]
+        state_list = [['[{:02d}] {} ({})'.format(r['STATEFP'],
+                                                 state_name[r['STATE']],
+                                                 r['STATE'])]
+                      for i, r in d.iterrows()]
+        state_list.sort()
         param1.filter.type = 'ValueList'
-        param1.filter.list = [i[0] for i in states]
+        param1.filter.list = [i[0] for i in state_list]
 
         # The counties of interest.  County values are set dynamically based up-
         # on the selection of state.  See updateParameters().
@@ -244,7 +252,13 @@ class ACS5Yr(object):
         # Once a state selection is made, populate the county drop-down menu.
         # Add an option to include all counties within the state.
         if parameters[1].altered and not parameters[1].hasBeenValidated:
-            self.createCountyList(parameters)
+            abbv = parameters[1].valueAsText[-3:-1]
+            fldA = 'COUNTYFP'
+            fldB = 'COUNTYNAME'
+            suf = ' County'
+            cnty = [('[{:03d}] {}'.format(r[fldA], r[fldB].removesuffix(suf)))
+                     for i, r in state_df.iterrows() if r['STATE'] == abbv]
+            all_counties = set(['[*] All Counties'] + cnty)
             parameters[2].filters[0].list = sorted(all_counties)
         return 
 
@@ -408,7 +422,7 @@ class ACS5Yr(object):
         level = parameters[3].value
         url = self.createDataURL(level, year, variables, state_fips, counties)
        
-        # Add to the tool messgaes the variables and their descriptive names.
+        # Add to the tool messages the variables and their descriptive names.
         msg = 'Variable\tDescription'
         for var in variables:
             if var.endswith('E'):
@@ -558,6 +572,27 @@ class ACS5Yr(object):
         """This method takes place after outputs are processed and
         added to the display."""
         return
+    
+    def stateNames(self):
+        name = {'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona',
+                'AR': 'Arkansas', 'CA': 'California', 'CO': 'Colorado',
+                'CT': 'Connecticut', 'DE': 'Delaware',
+                'DC': 'District of Columbia', 'FL': 'Florida', 'GA': 'Georgia',
+                'HI': 'Hawaii', 'ID': 'Idaho', 'IL': 'Illinois',
+                'IN': 'Indiana', 'IA': 'Iowa', 'KS': 'Kansas', 'KY': 'Kentucky',
+                'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
+                'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota',
+                'MS': 'Mississippi', 'MO': 'Missouri', 'MT': 'Montana',
+                'NE': 'Nebraska', 'NV': 'Nevada', 'NH': 'New Hampshire',
+                'NJ': 'New Jersey', 'NM': 'New Mexico', 'NY': 'New York',
+                'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio',
+                'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania',
+                'RI': 'Rhode Island', 'SC': 'South Carolina',
+                'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas',
+                'UT': 'Utah', 'VT': 'Vermont', 'VA': 'Virginia',
+                'WA': 'Washington', 'WV': 'West Virginia', 'WI': 'Wisconsin',
+                'WY': 'Wyoming'}
+        return name
 
     def specifyTables(self):
         """Define the tables that contain all variables for the tract and block
@@ -840,24 +875,6 @@ class ACS5Yr(object):
         # available for certain years will not be in the list of variables for
         # other years, e.g., the list of 2021 variables will not contain B19113.
         blkgp_tbls.update(blkgp_2018, blkgp_2014)
-        return
-
-    def createCountyList(self, parameters):
-        """Create a list of all counties within the selected state."""
-        global all_counties
-        
-        fips = parameters[1].value[1:3]
-        abbv = parameters[1].value[-3:-1].lower()
-        url = ('https://www2.census.gov/geo/docs/reference/codes/files/'
-               'st{}_{}_cousub.txt'.format(fips, abbv))
-        page = requests.get(url)
-        doc = lxml.html.fromstring(page.content)
-        T = doc.text_content().split('\r\r')
-        t = sorted(set(tuple(i.split(',')[2:4]) for i in T))
-        s = 'County'
-        cnty = ['[{}] {}'.format(i[0], i[1][:i[1].rfind(s) - 1]
-                                 if i[1].rfind(s) > 0 else i[1]) for i in t]
-        all_counties = set(['[*] All Counties'] + cnty)
         return
     
     def setVariables(self, parameters):
