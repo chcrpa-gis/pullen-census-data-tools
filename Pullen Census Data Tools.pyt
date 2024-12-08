@@ -976,7 +976,7 @@ class ACS5Yr(object):
                'block group': 'BLKGRPCE'}
         col_names = list(df.columns)
         new_names = [dic[i] if i in dic else i for i in col_names]
-        df.set_axis(new_names, axis='columns', inplace=True)
+        df = df.set_axis(new_names, axis='columns')
 
         # Define a new column, GEOID, which matches the GEOID attribute in the
         # geometry shapefiles and feature classes available from the Census.  
