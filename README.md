@@ -60,7 +60,8 @@ Planning Analyst II, Research & Analysis
 
 
 # <a name="history"></a>History
-- **2023_06_13** Updated the code to work with changes made to the Census website.
+- **2024-12-08** Updated the code to reflect the deprecation of the inplace parameter from DataFrame.set_axis() in Pandas
+- **2023-06-13** Updated the code to work with changes made to the Census website.
 - **2023-04-26** Included instructions on how to run the tool from the Python Window.
 - **2023-04-24** Added the ability to select between tracts and block groups.  Working to limit the variables presented in the drop down to only those available for the selected geography.  Currently only supporting B tables.  Addressed code negatively impacted by ArcGIS Pro 3.1 tool deprecations.
 - **2022-12-08** As the Census Bureau has now released 2021 data, that year is now an option in the year parameter drop down.
