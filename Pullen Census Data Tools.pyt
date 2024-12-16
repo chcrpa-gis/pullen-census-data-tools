@@ -16,6 +16,10 @@ Summary: This toolbox contains a tool for extracting up to 50 estimates from the
          gins of errors are either written to a stand alone table or are perman-
          ently joined to an automated download of the appropriate geometries
          based upon user preferences.
+
+         A toolbox contains an additional tool to assist in the visualization of
+         data.  The Create Scale-Dependent Outlines tool will make polygon out-
+         lines draw only at a user specified scale.
 --------------------------------------------------------------------------------         
   Notes: The tool can be implemented from the Python Window of ArcGIS Pro if the
          following steps are taken.  First, import the toolbox and then execute
@@ -45,7 +49,12 @@ Caveats: The toolbox is incompatible with ArcMap.
          You should have received a copy of the GNU General Public License
          along with this program.  If not, see <https://www.gnu.org/licenses/>.
 --------------------------------------------------------------------------------
-History: 2023-06-13 Updated the code that populates to drop down menus for
+History: 2024-12-15 Explicitly imported NumPy as it was no longer recognized by
+         default when opening ArcGIS Pro 3.4.0.
+         
+         2023-09-12 Added the tool Create Scale-Dependent Outlines.
+
+         2023-06-13 Updated the code that populates to drop down menus for
          states and counties to accommodate changes made on the Census' website.
 
          2023-04-24 Added the ability to download Block Group data.  Due to the
@@ -81,12 +90,15 @@ History: 2023-06-13 Updated the code that populates to drop down menus for
 
 import arcpy
 import os
+import numpy
 import pandas
 import requests
 import shutil
 import lxml.html
 from collections import Counter
+from copy import deepcopy
 from zipfile import ZipFile
+
 
 
 class Toolbox(object):
@@ -97,7 +109,7 @@ class Toolbox(object):
         self.alias = "PullenCensusData"
 
         # List of tool classes associated with this toolbox
-        self.tools = [ACS5Yr]
+        self.tools = [ACS5Yr, ScaleDependentOutlines]
 
 
 class ACS5Yr(object):
@@ -107,7 +119,7 @@ class ACS5Yr(object):
         self.description = ""
         self.canRunInBackground = False
 
-        # Specify that tables that contain data for at the tract & block group
+        # Specify the tables that contain data for at the tract & block group
         # levels.
         self.specifyTables()
 
@@ -124,7 +136,7 @@ class ACS5Yr(object):
             parameterType='Required',
             direction='Input')
         param0.filter.type = 'ValueList'
-        param0.filter.list = [i for i in range(2021, 2013, -1)]        
+        param0.filter.list = [i for i in range(2022, 2013, -1)]        
 
         # The state of interest.  In the user dialogue, the selections are pre-
         # sented as "[FIPS] Name (Postal Abbv.)," e.g., "[47] Tennessee (TN)."
@@ -976,7 +988,7 @@ class ACS5Yr(object):
                'block group': 'BLKGRPCE'}
         col_names = list(df.columns)
         new_names = [dic[i] if i in dic else i for i in col_names]
-        df.set_axis(new_names, axis='columns', inplace=True)
+        df = df.set_axis(new_names, axis='columns')
 
         # Define a new column, GEOID, which matches the GEOID attribute in the
         # geometry shapefiles and feature classes available from the Census.  
@@ -1099,3 +1111,194 @@ class ACS5Yr(object):
                 if fld_moe in flds:
                     arcpy.management.AlterField(data, fld_moe, '',
                                                 alias[fld][1])
+
+class ScaleDependentOutlines(object):
+    def __init__(self):
+        """Define the tool (tool name is the name of the class)."""
+        self.label = "Create Scale-Dependent Outlines"
+        self.description = ""
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        """Define parameter definitions"""
+        param0 = arcpy.Parameter(
+            displayName='Feature Layer',
+            name='feature_layer',
+            datatype='GPFeatureLayer',
+            direction='Input',
+            parameterType='Required')
+        param0.filter.list = ['Polygon']
+
+        param1 = arcpy.Parameter(
+            displayName='Scale',
+            name='scale',
+            datatype='GPString',
+            parameterType='Required',
+            direction='Input')
+        default_scales = ['1:1,000',
+                          '1:5,000',
+                          '1:10,000',
+                          '1:24,000',
+                          '1:50,000',
+                          '1:100,000',
+                          '1:500,000',
+                          '1:1,000,000',
+                          '1:5,000,000',
+                          '1:20,000,000',
+                          '1:100,000,000',
+                          '<Custom>']
+        param1.filter.type = 'ValueList'
+        param1.filter.list = default_scales
+
+        param2 = arcpy.Parameter(
+            displayName='1:',
+            name='custom_scale',
+            datatype='GPLong',
+            parameterType='Optional',
+            direction='Input',
+            enabled=False)
+        
+        params = [param0, param1, param2]
+        return params
+
+    def isLicensed(self):
+        """Set whether tool is licensed to execute."""
+        return True
+
+    def updateParameters(self, parameters):
+        """Modify the values and properties of parameters before internal
+        validation is performed.  This method is called whenever a parameter
+        has been changed."""
+        if parameters[1].valueAsText == '<Custom>':
+            parameters[2].enabled = True
+        else:
+            parameters[2].enabled = False
+        return
+
+    def updateMessages(self, parameters):
+        """Modify the messages created by internal validation for each tool
+        parameter.  This method is called after internal validation."""        
+        
+
+        """The chart below indicates the combinations of the symbology as
+        chosen on the Symbology tab & how it is exposed via Mapping (arcpy.mp)
+        as well as in the Cartographic Information Model (CIM).  Since Mapping
+        will throw an error when trying to access the renderer when there is
+        none, use a combination of CIM & Mapping to bypass using a Try/Except
+        block & determine if a layer can be modified to use scale-based outlines
+        or not.  Valid symbologys for this tool are denoted with *.
+
+        SYMBOLOGY            ARCPY.MP                CIM
+        -------------------- ------------------------ -----------------------
+        Single Symbol        SimpleRenderer           CIMSimpleRenderer
+        Unique Values*       UniqueValueRenderer      CIMUniqueValueRenderer
+        Graduated Colors*    GraduatedColorsRenderer  CIMClassBreaksRenderer
+        Bivariate Colors*    UniqueValuesRenderer     CIMUniqueValueRenderer
+        Unclassed Colors*    UnclassedColorsRenderer  CIMClassBreaksRenderer
+        Graduated Symbols*   GraduatedSymbolsRenderer CIMClassBreaksRenderer
+        Porportional Symbols <None>                   CIMProportionalRenderer
+        Dot Density          <None>                   CIMDotDensityRenderer
+        Charts               <None>                   CIMChartRenderer
+        Dictionary           <None>                   CIMDictionaryRenderer
+        """
+
+        val_cim = ["<class 'arcpy.cim.CIMSymbolizers.CIMUniqueValueRenderer'>",
+                   "<class 'arcpy.cim.CIMSymbolizers.CIMClassBreaksRenderer'>"]
+
+        # Verify the following conditions to enable to enable the tool:
+        # 1. The layer is in the table of contents of the active map.
+        # 2. The layer has one of the correct CIM renderers.
+        aprx = arcpy.mp.ArcGISProject('CURRENT')
+        lyr_name = parameters[0].valueAsText
+        lyr_list = aprx.activeMap.listLayers(lyr_name)
+        if not lyr_list:
+            msg = ('The layer should be in the table of contents of the active '
+                   'map.')
+            parameters[0].setErrorMessage(msg)
+        else:
+            cim = lyr_list[0].getDefinition('V3')
+            renderer_type = repr(type(cim.renderer))
+            if renderer_type not in val_cim:
+                msg = ('Layer symbology must be either Unique Values, Graduated '
+                       'Colors, Bivariate Colors, Unclassed Colors, or Graduated '
+                       'Symbols.')
+                parameters[0].setErrorMessage(msg)
+            else:
+                if renderer_type == val_cim[0] and not cim.renderer.groups:
+                    msg = ('Tool requires the symbology to have more than the '
+                           'default class (<all other values>) to work.')
+                    parameters[0].setErrorMessage(msg)
+
+        if parameters[2].enabled and parameters[2].value is not None:
+            if parameters[2].value < 0:
+                msg = ('The scale cannot be negative.')
+                parameters[2].setErrorMessage(msg)
+        return
+
+    def execute(self, parameters, messages):
+        """The source code of the tool."""
+
+        aprx = arcpy.mp.ArcGISProject('CURRENT')
+        lyr = aprx.activeMap.listLayers(parameters[0].valueAsText)[0]
+        arcpy.AddMessage('Layer Name: {}'.format(lyr.name))
+        renderer_type = lyr.symbology.renderer.type
+        arcpy.AddMessage('Renderer Type: {}'.format(renderer_type))
+
+        # If the custom scale parameter is enabled, scale is obtained from that.
+        # If the scale is specified in the dropdown, it must be converted from
+        # a string into a number.
+        if parameters[2].enabled:
+            scale = parameters[2].value
+        else:
+            scale = int(parameters[1].value[2:].replace(',', ''))
+        arcpy.AddMessage('Scale: {:,d}'.format(scale))
+
+        # Get the CIM for the feature layer.  Use the type of renderer to deter-
+        # mine the appropriate way to obtain itertive symbology objects that
+        # may have alternate symbology associated with them.
+        cim = lyr.getDefinition('V3')
+        iterative = None
+        color_renderers = ['GraduatedColorsRenderer', 'UnclassedColorsRenderer']
+        if renderer_type == 'UniqueValueRenderer':
+            iterative = cim.renderer.groups[0].classes
+        elif renderer_type in color_renderers:
+            iterative = cim.renderer.breaks
+        else:
+            arcpy.AddMessage('{} is not a supported '
+                             'renderer.'.format(renderer_type))
+        if iterative:
+            for item in iterative:
+                # Remove any previous alternate symbology.
+                item.alternateSymbols.clear()
+
+                if scale == 0:
+                    item.symbol.minScale = 0.0
+                    item.symbol.maxScale = 0.0
+                else:
+                    # Make a deepcopy of the existing symbology so that there
+                    # are no references to the original.
+                    alternate = deepcopy(item.symbol)
+
+                    # Set the min/max scales for the existing symbology.
+                    item.symbol.minScale = scale
+                    item.symbol.maxScale = 0.0
+
+                    # Set the min/max scales for the alternate symbology.
+                    alternate.minScale = 0.0
+                    alternate.maxScale = scale
+
+                    # Modify the alternate symbology so that the outline is
+                    # transparent.
+                    alternate.symbol.symbolLayers[0].color.values[-1] = 0
+
+                    # Add the alternate symbology to the existing symbology.
+                    item.alternateSymbols.append(alternate)
+
+        # Load the modified CIM back into the layer.    
+        lyr.setDefinition(cim)            
+        return
+
+    def postExecute(self, parameters):
+        """This method takes place after outputs are processed and
+        added to the display."""
+        return
