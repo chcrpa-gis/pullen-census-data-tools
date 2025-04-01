@@ -60,6 +60,8 @@ Planning Analyst II, Research & Analysis
 
 
 # <a name="history"></a>History
+- **2024-04-01** Added 2023 to the list of years from which to download data.
+- **2024-12-15** Explicitly imported NumPy as it was no longer recognized by default when using ArcGIS Pro 3.4.0.
 - **2024-12-08** Updated the code to reflect the deprecation of the inplace parameter from DataFrame.set_axis() in Pandas
 - **2023-06-13** Updated the code to work with changes made to the Census website.
 - **2023-04-26** Included instructions on how to run the tool from the Python Window.
