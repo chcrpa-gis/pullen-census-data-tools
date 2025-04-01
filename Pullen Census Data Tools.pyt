@@ -49,7 +49,9 @@ Caveats: The toolbox is incompatible with ArcMap.
          You should have received a copy of the GNU General Public License
          along with this program.  If not, see <https://www.gnu.org/licenses/>.
 --------------------------------------------------------------------------------
-History: 2024-12-15 Explicitly imported NumPy as it was no longer recognized by
+History: 2025-04-01 Added 2023 a year option.
+
+         2024-12-15 Explicitly imported NumPy as it was no longer recognized by
          default when opening ArcGIS Pro 3.4.0.
          
          2023-09-12 Added the tool Create Scale-Dependent Outlines.
@@ -136,7 +138,7 @@ class ACS5Yr(object):
             parameterType='Required',
             direction='Input')
         param0.filter.type = 'ValueList'
-        param0.filter.list = [i for i in range(2022, 2013, -1)]        
+        param0.filter.list = [i for i in range(2023, 2013, -1)]        
 
         # The state of interest.  In the user dialogue, the selections are pre-
         # sented as "[FIPS] Name (Postal Abbv.)," e.g., "[47] Tennessee (TN)."
