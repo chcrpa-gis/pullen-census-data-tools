@@ -53,6 +53,8 @@ Planning Analyst II, Research & Analysis
 
 <a href="http://chcrpa.org">Chattanooga-Hamilton County Regional Planning Agency</a>
 
+**Special thanks** to Tim Kuhn, Director of the Tennessee State Data Center, for inspiring this effort and providing critical feedback while evolving from an idea to a working toolbox.
+
 
 # <a name="installation"></a>License
 - **[GPLv3 license](https://www.gnu.org/licenses/gpl-3.0.en.html)**
