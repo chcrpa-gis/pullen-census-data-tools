@@ -1,6 +1,9 @@
 <a href="http://chcrpa.org"><img src="https://chcrpa.org/wp-content/uploads/2017/01/chc-rpa-logo-1.png" title="Chattanooga-Hamilton County Regional Planning" alt="Chattanooga-Hamilton County Regional Planning"></a>
 
 
+# <a name="issues"></a>IMPORTANT NOTICE
+As of May 2025, the U.S. Census has made CDN changes such that the Python objects utilized by the data extraction tool can no longer connect to the Census server.  Solutions are being investigated and will be implemented as time allows.   
+
 # <a name="pullen-census-data-tools"></a> Pullen Census Data Tools
 This Python toolbox is designed to work within Esri ArcGIS Pro software to provide a pleasant user experience when extracting Census data, in particular the 5-year estimates from the American Community Survey (ACS).  The extracted data will either take the form of a stand alone table inside an existing file geodatabase or, if geometries were selected, as a feature class with the selected variables appended to the attribute table.  
 
@@ -42,8 +45,9 @@ arcpy.PullenCensusData.ACS5Yr(
 ```arcpy.ImportToolbox(r"C:\Users\<user>\Documents\GitHub\pullen-census-data-tools\Pullen Census Data Tools.pyt")```
 
 # <a name="known-issues"></a>Known Issues
+- Changes made by the Census have resulted in Python objects no longer working on their webpages.  Investigating solutions and will update as time allows.
 - The tool is incompatible with ArcMap.
-- The newest version of the tool currently only supports B Tables.
+- The tool currently only supports B Tables.
 
 
 # <a name="team-members"></a>Team Members
